@@ -1,0 +1,128 @@
+
+import cx_Oracle
+import pandas as pd
+from datetime import datetime
+
+
+print(datetime.now() , "connecting to TOAD...")
+con = cx_Oracle.connect('***/****@****')
+print("Database version:", con.version)
+print("Oracle Python version:", cx_Oracle.version)
+print(datetime.now() ,"conneced to TOAD, running query...")
+cur = con.cursor()
+cur.execute("select imsi, CELL_ID, DATA_VOLUME_INC , DATA_VOLUME_OUT, CALL_DURATION , partner_code , SERVICE_CODE , CALL_TYPE , TELESERVICE , CALL_DATE  from pm_natroam.pm_rated_cdrs where call_date >= to_date('2022-07-01 00:00:00','yyyy-mm-dd HH24:MI:SS') AND call_date <= to_date('2022-07-01 23:59:59','yyyy-mm-dd HH24:MI:SS')")
+
+df1 = pd.DataFrame(cur, columns=['IMSI' , 'LACCI' , 'DATA_IN', 'DATA_OUT' , "CALL_DURATION", "PARTNER_CODE" , "SERVICE_CODE" , "CALL_TYPE" , "TELESERVICE" , "CALL_DATE"])
+df1.set_index('LACCI' , inplace=True)
+print(datetime.now() ,"query executed, calculating data...")
+
+df1.to_csv('D:/dataframe.txt')
+
+df = pd.read_csv('D:/dataframe.txt')
+
+df["CALL_DATE"] = pd.to_datetime(df["CALL_DATE"], format='%Y-%m-%d %H:%M:%S')
+
+print('''
+      
+''')
+print("The following qurey results are for: " ,df.loc[1 , "CALL_DATE"].day_name() , df.loc[1 , "CALL_DATE"].date())
+print('''     
+''')
+
+# ************  USO REPORT  ************                 
+USO_site_list_df = pd.read_csv("D:/lacci.txt" , names= ["GCI"])
+USO_4G_site_list_df = pd.read_csv("D:/lacci4g.txt" , names= ["ECGI"] , dtype=('str'))
+
+USO_df = df.merge(right= USO_site_list_df , how= 'inner' , left_on=('LACCI') , right_on=('GCI') )
+
+USO_4G_site_list_df['ECGI'].astype(str)
+USO_4G_df = df.merge(right= USO_4G_site_list_df , how= 'inner' , left_on=('LACCI') , right_on=('ECGI') )
+
+USO_2G3G_MCI = USO_df['PARTNER_CODE'] == 'JPL'
+USO_4G_MCI = USO_4G_df['PARTNER_CODE'] == 'JPL'
+
+#FILTERs
+USO_2G3G_MCI_MOC = (USO_df['PARTNER_CODE'] == 'JPL') & (USO_df['SERVICE_CODE'] == 0) &  (USO_df['CALL_TYPE'] == 2) & (USO_df['TELESERVICE'] != 12)
+USO_2G3G_MCI_MTC = (USO_df['PARTNER_CODE'] == 'JPL') & (USO_df['SERVICE_CODE'] == 0) &  (USO_df['CALL_TYPE'] == 1)
+USO_2G3G_MCI_DATA = (USO_df['PARTNER_CODE'] == 'JPL') & (USO_df['SERVICE_CODE'] == 5)
+USO_4G_MCI_DATA = (USO_4G_df['PARTNER_CODE'] == 'JPL') & (USO_4G_df['SERVICE_CODE'] == 305) 
+
+#Variables
+Unique2G3G_IMSI_MCI_USO = len(pd.unique(USO_df.loc[USO_2G3G_MCI]['IMSI']))
+Unique4G_IMSI_MCI_USO = len(pd.unique(USO_4G_df.loc[USO_4G_MCI]['IMSI']))
+Data2G3G_Usage_MCI_Gb = int((((sum(USO_df[USO_2G3G_MCI_DATA]['DATA_IN']) + sum(USO_df[USO_2G3G_MCI_DATA]['DATA_OUT']))/1024)/1024)/1024)
+Data4G_Usage_MCI_Gb = int((((sum(USO_4G_df[USO_4G_MCI_DATA]['DATA_IN']) + sum(USO_4G_df[USO_4G_MCI_DATA]['DATA_OUT']))/1024)/1024/1024))
+MOC_MCI_USO = int((sum(USO_df[USO_2G3G_MCI_MOC]['CALL_DURATION'])/60))
+MTC_MCI_USO = int((sum(USO_df[USO_2G3G_MCI_MTC]['CALL_DURATION'])/60))                  
+
+print("******** USO REPORT ********")
+print("Number of 2G3G unique IMSIs MCI_USO: " , Unique2G3G_IMSI_MCI_USO)
+print("Number of 4G unique IMSIs MCI_USO:   " , Unique4G_IMSI_MCI_USO)
+print("TOTAL 2G3G Data Usage(Gb) MCI_USO:   " , Data2G3G_Usage_MCI_Gb)
+print("TOTAL 4G Data Usage(Gb) MCI_USO  :   " , Data4G_Usage_MCI_Gb)
+print("TOTAL 2G3G MOC(min) MCI_USO:         " , MOC_MCI_USO)
+print("TOTAL 2G3G MTC(min) MCI_USO:         " , MTC_MCI_USO)
+
+# ************  MCI REPORT  ************   
+
+#FILTERs
+MCI_Inbound = df['PARTNER_CODE'] == 'JPL'
+MCI_MOC_Inbound = (df['PARTNER_CODE'] == 'JPL') & (df['SERVICE_CODE'] == 0) &  (df['CALL_TYPE'] == 2) & (df['TELESERVICE'] != 12)
+MCI_MTC_Inbound = (df['PARTNER_CODE'] == 'JPL') & (df['SERVICE_CODE'] == 0) &  (df['CALL_TYPE'] == 1) 
+MCI_2G3GDATA_Inbound = (df['PARTNER_CODE'] == 'JPL') & (df['SERVICE_CODE'] == 5)
+MCI_4GDATA_Inbound = (df['PARTNER_CODE'] == 'JPL') & (df['SERVICE_CODE'] == 305)
+MCI_SMSMO_Inbound = (df['PARTNER_CODE'] == 'JPL') & (df['SERVICE_CODE'] == 3) &  (df['CALL_TYPE'] == 2)
+MCI_SMSMT_Inbound = (df['PARTNER_CODE'] == 'JPL') & (df['SERVICE_CODE'] == 3) &  (df['CALL_TYPE'] == 1)
+
+#Variables
+Number_MCI_inbound = len(pd.unique(df[MCI_Inbound]['IMSI']))
+TOTAL_2G3GData_Usage_MCI =  int((((sum(df[MCI_2G3GDATA_Inbound]['DATA_IN']) + sum(df[MCI_2G3GDATA_Inbound]['DATA_OUT']))/1024)/1024)/1024)
+TOTAL_4GData_Usage_MCI = int((((sum(df[MCI_4GDATA_Inbound]['DATA_IN']) + sum(df[MCI_4GDATA_Inbound]['DATA_OUT']))/1024)/1024/1024))
+TOTAL_MOC_MCI = int((sum(df[MCI_MOC_Inbound]['CALL_DURATION'])/60))
+TOTAL_MTC_MCI = int((sum(df[MCI_MTC_Inbound]['CALL_DURATION'])/60))
+TOTAL_SMSMO_MCI = int(((sum(df[MCI_SMSMO_Inbound]['CALL_TYPE'])))/2)
+TOTAL_SMSMT_MCI = int(((sum(df[MCI_SMSMT_Inbound]['CALL_TYPE']))))
+
+print('''     
+''')
+print("******** MCI Inbound REPORT ********")
+print("Number of MCI inbound roamers:   " , Number_MCI_inbound)
+print("TOTAL 2G3G Data Usage(Gb) MCI:   " , TOTAL_2G3GData_Usage_MCI)
+print("TOTAL 4G Data Usage(Gb) MCI  :   " , TOTAL_4GData_Usage_MCI )
+print("TOTAL Data Usage (Gb) MCI :      " , (TOTAL_2G3GData_Usage_MCI + TOTAL_4GData_Usage_MCI))
+print("TOTAL MOC(min) MCI:              " , TOTAL_MOC_MCI)
+print("TOTAL MTC(min) MCI:              " , TOTAL_MTC_MCI)
+print("TOTAL SMSMO MCI:                 " , TOTAL_SMSMO_MCI)
+print("TOTAL SMSMT MCI:                 " , TOTAL_SMSMT_MCI)
+
+# ************  Rightel REPORT  ************ 
+
+RTL_Inbound = df['PARTNER_CODE'] == 'AX6'
+RTL_MOC_Inbound = (df['PARTNER_CODE'] == 'AX6') & (df['SERVICE_CODE'] == 0) &  (df['CALL_TYPE'] == 2) & (df['TELESERVICE'] != 12)
+RTL_MTC_Inbound = (df['PARTNER_CODE'] == 'AX6') & (df['SERVICE_CODE'] == 0) &  (df['CALL_TYPE'] == 1) 
+RTL_2G3GDATA_Inbound = (df['PARTNER_CODE'] == 'AX6') & (df['SERVICE_CODE'] == 5)
+RTL_4GDATA_Inbound = (df['PARTNER_CODE'] == 'AX6') & (df['SERVICE_CODE'] == 305)
+RTL_SMSMO_Inbound = (df['PARTNER_CODE'] == 'AX6') & (df['SERVICE_CODE'] == 3) &  (df['CALL_TYPE'] == 2)
+RTL_SMSMT_Inbound = (df['PARTNER_CODE'] == 'AX6') & (df['SERVICE_CODE'] == 3) &  (df['CALL_TYPE'] == 1)
+
+#Variables
+Number_RTL_inbound = len(pd.unique(df[RTL_Inbound]['IMSI']))
+TOTAL_2G3GData_Usage_RTL =  int((((sum(df[RTL_2G3GDATA_Inbound]['DATA_IN']) + sum(df[RTL_2G3GDATA_Inbound]['DATA_OUT']))/1024)/1024)/1024)
+TOTAL_4GData_Usage_RTL = int((((sum(df[RTL_4GDATA_Inbound]['DATA_IN']) + sum(df[RTL_4GDATA_Inbound]['DATA_OUT']))/1024)/1024/1024))
+TOTAL_MOC_RTL = int((sum(df[RTL_MOC_Inbound]['CALL_DURATION'])/60))
+TOTAL_MTC_RTL = int((sum(df[RTL_MTC_Inbound]['CALL_DURATION'])/60))
+TOTAL_SMSMO_RTL = int(((sum(df[RTL_SMSMO_Inbound]['CALL_TYPE'])))/2)
+TOTAL_SMSMT_RTL = int(((sum(df[RTL_SMSMT_Inbound]['CALL_TYPE']))))
+
+print('''     
+''')
+print("******** Rightel Inbound REPORT ********")
+print("Number of RTL inbound roamers:   " , Number_RTL_inbound)
+print("TOTAL 2G3G Data Usage(Gb) RTL:   " , TOTAL_2G3GData_Usage_RTL)
+print("TOTAL 4G Data Usage(Gb) RTL  :   " , TOTAL_4GData_Usage_RTL)
+print("TOTAL Data Usage (Gb) RTL:       " , (TOTAL_2G3GData_Usage_RTL + TOTAL_4GData_Usage_RTL))
+print("TOTAL MOC(min) RTL:              " , TOTAL_MOC_RTL)
+print("TOTAL MTC(min) RTL:              " , TOTAL_MTC_RTL)
+print("TOTAL SMSMO RTL:                 " , TOTAL_SMSMO_RTL)
+print("TOTAL SMSMT RTL:                 " , TOTAL_SMSMT_RTL)
+
